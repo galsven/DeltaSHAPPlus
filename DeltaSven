@@ -395,12 +395,12 @@ y_pred_train_numere = np.argmax(Predictions_train, axis=1)
 y_pred_validation_numere = np.argmax(Predictions_validation, axis=1)
 y_pred_test_numere = np.argmax(Predictions, axis=1)
 
-#  Mapare label-uri
+#  Mapping the labels
 y_pred_train = [lista_labels[i] for i in y_pred_train_numere]
 y_pred_validation = [lista_labels[i] for i in y_pred_validation_numere]
 y_pred_test = [lista_labels[i] for i in y_pred_test_numere]
 
-#  Scoruri corecte
+#  Correct scores
 print(
     "f1 train:", f1_score(y_train, y_pred_train, average='macro'),
     "f1 validation:", f1_score(y_validation, y_pred_validation, average='macro'),
