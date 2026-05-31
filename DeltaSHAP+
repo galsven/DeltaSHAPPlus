@@ -1,0 +1,421 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.naive_bayes import MultinomialNB
+!pip install catboost
+from catboost import CatBoostClassifier
+from sklearn.metrics import classification_report
+!pip install shap
+import shap
+import seaborn as sns
+import matplotlib.pyplot as plt
+from datasets import load_dataset
+import os
+
+# @title
+from huggingface_hub import login
+
+# Paste your token here
+login(token="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")
+
+import pandas as pd
+
+from datasets import load_dataset
+
+# 1. Încarci dataset-ul original
+dataset = load_dataset("ailsntua/QEvasion")
+
+# 2. Extragi split-urile existente
+df_train = dataset["train"]
+#df_validation = dataset["validation"]
+df_test = dataset["test"]
+
+# 3. Spargi DOAR train-ul în train + validation
+split = df_train.train_test_split(test_size=1/3, seed=42)
+
+train_dataset = split["train"]
+val_dataset = split["test"]
+
+# 4. Păstrezi test-ul original
+test_dataset = df_test
+
+print("Train:", len(train_dataset))
+print("Validation:", len(val_dataset))
+print("Test:", len(test_dataset))
+
+df_train['clarity_label']
+
+df_train
+
+coloane_train = ['url', 'question_order',
+       'interview_question', 'interview_answer']
+coloane_label = ['clarity_label']
+
+df_train = pd.DataFrame(df_train)
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Assuming 'coloane_train' and 'coloane_label' are defined elsewhere in the notebook
+# Ensure df_train and df_test are pandas DataFrames
+df_train = pd.DataFrame(df_train)
+val_dataset = pd.DataFrame(val_dataset)
+df_test = pd.DataFrame(df_test)
+
+# Combine text columns into a single string for each row
+train_texts_combined = df_train[coloane_train].astype(str).agg(' '.join, axis=1)
+validation_texts_combined = val_dataset[coloane_train].astype(str).agg(' '.join, axis=1)
+test_texts_combined = df_test[coloane_train].astype(str).agg(' '.join, axis=1)
+
+train_labels = df_train[coloane_label]
+validation_labels = val_dataset[coloane_label]
+test_labels = df_test[coloane_label]
+
+vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1,2), stop_words="english")
+X_train_sparse = vectorizer.fit_transform(train_texts_combined)
+y_train = train_labels
+X_validation_sparse = vectorizer.transform(validation_texts_combined)
+y_validation = validation_labels
+X_test_sparse = vectorizer.transform(test_texts_combined)
+y_test = test_labels
+
+# Convert sparse matrices to DataFrames and filter columns
+feature_names = vectorizer.get_feature_names_out()
+X_train = pd.DataFrame(X_train_sparse.toarray(), columns=feature_names)
+X_validation = pd.DataFrame(X_validation_sparse.toarray(), columns=feature_names)
+X_train = X_train.loc[:, ~X_train.columns.str.contains('000', na=False)]
+X_validation = X_validation.loc[:, ~X_validation.columns.str.contains('000', na=False)] # Added this line to filter X_validation
+
+X_test = pd.DataFrame(X_test_sparse.toarray(), columns=feature_names)
+X_test = X_test.loc[:, ~X_test.columns.str.contains('000', na=False)]
+
+print(pd.Series(y_train).value_counts())
+
+vectorizer.get_feature_names_out()
+
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import classification_report, accuracy_score, f1_score
+
+
+
+# Initialize the Decision Tree classifier
+#dt_classifier = DecisionTreeClassifier(random_state=42)
+#De pus Catboost si RF si de train si de test(fara shapley)
+#10 rulari-doar ca aici e un singur prag-comparam cu 1.4-le nostru.
+
+# Train the classifier
+#dt_classifier.fit(X_train, y_train)
+
+# Predict on the test data
+#y_pred = dt_classifier.predict(X_test)
+
+# Evaluate the model
+#report = classification_report(y_test, y_pred)
+#print(report), print(accuracy_score(y_test, y_pred))
+
+from catboost import CatBoostClassifier
+from sklearn.metrics import classification_report, accuracy_score
+
+# Initialize the CatBoost classifier
+cb_classifier = CatBoostClassifier(random_state=42, verbose=0)
+
+# Train the classifier
+cb_classifier.fit(X_train, y_train)
+
+# Predict on the test data
+y_pred = cb_classifier.predict(X_test)
+
+# Evaluate the model
+report = classification_report(y_test, y_pred)
+print(report)
+print(accuracy_score(y_test, y_pred))
+
+print(pd.Series(y_train).value_counts())
+
+print(y_train['clarity_label'].value_counts())
+
+print(f1_score(y_train, cb_classifier.predict(X_train), average="macro"))
+y_pred_validation = cb_classifier.predict(X_validation)
+print(f1_score(y_validation, y_pred_validation, average = "macro"))
+print(f1_score(y_test, cb_classifier.predict(X_test), average = "macro"))
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, accuracy_score
+
+# Initialize the Random Forest classifier
+rf_classifier = RandomForestClassifier(random_state=42)
+
+# Train the classifier
+rf_classifier.fit(X_train, y_train)
+
+# Predict on the test data
+y_pred = rf_classifier.predict(X_test)
+
+# Evaluate the model
+report = classification_report(y_test, y_pred)
+print(report)
+print(accuracy_score(y_test, y_pred))
+
+print(f1_score(y_train, rf_classifier.predict(X_train), average="macro"))
+y_pred_validation_rf = rf_classifier.predict(X_validation)
+print(f1_score(y_validation, y_pred_validation_rf, average = "macro"))
+print(f1_score(y_test, y_pred, average = "macro"))
+
+X_train.columns
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+from catboost import CatBoostClassifier
+from sklearn.metrics import classification_report, accuracy_score
+
+!pip install shap-selection
+import shap
+from shap_selection import feature_selection
+
+import catboost as cb
+
+X_train.head()
+
+lista_labels = np.unique(y_train)
+Orders =[]
+Shapley =[]
+
+pip install imbalanced-learn
+
+from imblearn.over_sampling import SMOTE
+from sklearn.model_selection import train_test_split
+
+# aplicare SMOTE
+smote = SMOTE(random_state=42)
+X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+X_train = X_train_res.copy()
+y_train = y_train_res.copy()
+
+print(f1_score(y_train, cb_classifier.predict(X_train), average="macro"))
+y_pred_validation = cb_classifier.predict(X_validation)
+print(f1_score(y_validation, y_pred_validation, average = "macro"))
+print(f1_score(y_test, cb_classifier.predict(X_test), average = "macro"))
+
+print(f1_score(y_train, rf_classifier.predict(X_train), average="macro"))
+y_pred_validation_rf = rf_classifier.predict(X_validation)
+print(f1_score(y_validation, y_pred_validation_rf, average = "macro"))
+print(f1_score(y_test, y_pred, average = "macro"))
+
+for i in range(len(lista_labels)):
+    target_class = lista_labels[i]
+    y_train_ova = (y_train == target_class).astype(int)
+    y_test_ova  = (y_test  == target_class).astype(int)
+    model =cb.CatBoostClassifier(verbose = False)
+    model.fit(X_train, y_train_ova)
+
+    feature_names=np.array(X_train.columns)
+
+    feature_order = feature_selection.shap_select(model, X_train, X_test, feature_names,  agnostic=False)
+
+    Orders.append(feature_order[0])
+    Shapley.append(feature_order[1])
+
+    data = pd.DataFrame(feature_order, columns=feature_order[0])
+    data.drop(data.index[0], inplace=True)
+    data = data.transpose().reset_index()
+    data.columns = ['Feature', 'Order']
+
+    plt.figure(figsize=(8, 4))
+    colors = ["blue"] * 10 + ["red"] * (len(data) - 4)
+    ax = sns.barplot( y='Order', x='Feature', hue='Feature', data=data[:20], palette=colors)
+    plt.xticks(rotation=30, ha="right")
+    # Add datalabels
+    for p in ax.patches:
+        ax.annotate(
+            format(p.get_height(), ".1f"),          # format label (1 decimal)
+            (p.get_x() + p.get_width() / 2., p.get_height()),  # position
+            ha="center", va="bottom", fontsize=9, color="black", xytext=(0, 1),
+            textcoords="offset points", rotation=45
+        )
+    plt.tight_layout()
+    plt.title(target_class)
+    plt.savefig('shap_order_'+target_class+'.png', dpi=600)
+ORDERS = np.array(Orders)
+SHAPLEY = np.array(Shapley)
+
+feateruri = pd.DataFrame(ORDERS.T, columns=lista_labels)
+shapley = pd.DataFrame(SHAPLEY.T, columns=lista_labels)
+df = pd.concat([feateruri, shapley], axis=1)
+df.to_csv('shapley_order.csv', index=False, header=True)
+
+a=feateruri.copy()
+lst = a.stack().dropna().tolist()
+len(lst)
+X_train[lst]
+lst=np.unique(lst)
+print(len(lst))
+
+y_train=np.array(y_train).ravel()
+
+# Initialize the classifiers
+rf_classifier = RandomForestClassifier(random_state=42)
+svm_classifier = SVC()
+nb_classifier = GaussianNB()
+catboost_classifier = CatBoostClassifier(verbose=0, random_state=42)
+
+# Train the classifiers
+print("RF")
+rf_classifier.fit(X_train[lst], y_train)
+print("SVM")
+svm_classifier.fit(X_train[lst], y_train.T)
+print("NB")
+nb_classifier.fit(np.array(X_train[lst]), y_train.T)  # GaussianNB requires dense input
+print("CatBoost")
+catboost_classifier.fit(X_train[np.unique(lst)], y_train.T)
+
+# Predict on the test data
+y_pred_rf = rf_classifier.predict(X_test[lst])
+y_pred_svm = svm_classifier.predict(X_test[lst])
+y_pred_nb = nb_classifier.predict(np.array(X_test[lst]))
+y_pred_catboost = catboost_classifier.predict(X_test[np.unique(lst)])
+
+# Print classification reports
+print("Classification Report for Random Forest:")
+print(f1_score(y_test, y_pred_rf,average='macro'))
+
+print("Classification Report for SVM:")
+print(f1_score(y_test, y_pred_svm,average='macro'))
+
+print("Classification Report for Naive Bayes:")
+print(f1_score(y_test, y_pred_nb,average='macro'))
+
+print("Classification Report for CatBoost:")
+print(f1_score(y_test, y_pred_catboost,average='macro'))
+
+shapley
+
+Predictions = []
+Predictions_train = []
+for i in range(len(lista_labels)):
+    target_class = lista_labels[i]
+    y_train_ova = (y_train == target_class).astype(int)
+    y_test_ova  = (y_test  == target_class).astype(int)
+    model =RandomForestClassifier(verbose = False)
+    cate = np.sum(shapley[target_class]>10)
+    print(target_class, cate)
+    lst = a.iloc[:cate,i]
+    model.fit(X_train[lst], y_train_ova)
+    y_pred = model.predict_proba(X_test[lst])[:,1]
+
+    Predictions_train.append(model.predict_proba(X_train[lst])[:,1])
+    Predictions.append(y_pred)
+    print(f1_score(y_test_ova, model.predict(X_test[lst])), target_class)
+
+Predictions=np.array(Predictions).T
+Predictions_train=np.array(Predictions_train).T
+y_pred_numere = np.argmax(Predictions, axis=1)
+y_pred = [lista_labels[i] for i in y_pred_numere]
+f1_score(y_test, y_pred,average='macro')
+
+y_pred
+
+rf = RandomForestClassifier()
+rf.fit(Predictions_train, y_train)
+y_pred = rf.predict(Predictions)
+print(f1_score(y_test, y_pred,average='macro'))
+
+y_pred
+
+shapley.tall()
+
+y_pred = np.asarray(y_pred).reshape(-1, 1)
+y_test = np.asarray(y_test).reshape(-1, 1)
+np.hstack([Predictions,y_test,y_pred])
+
+sets = [set() for i in lista_labels]
+for i in range(len(lista_labels)):
+    target_class = lista_labels[i]
+    cate = np.sum(shapley[target_class]>1.2) 
+    lista = a.iloc[:cate,i]
+    print(target_class, cate, len(lista))
+
+    sets[i] = set(lista)
+print(len(sets[0]), len(sets[1]), len(sets[2]))
+
+cuvinte = [set() for i in lista_labels]
+cuvinte[0] = sets[0]-sets[1]-sets[2]
+cuvinte[1]=sets[1]-sets[0]-sets[2]
+cuvinte[2]=sets[2]-sets[0]-sets[1]
+print(f"Length of cuvinte[0] (Ambivalent): {len(cuvinte[0])}")
+print(f"Length of cuvinte[1] (Clear Non-Reply): {len(cuvinte[1])}")
+print(f"Length of cuvinte[2] (Clear Reply): {len(cuvinte[2])}")
+print(cuvinte[0],cuvinte[1],cuvinte[2])
+print(sets[0] & sets[1] & sets[2])
+
+Predictions = []
+Predictions_train = []
+Predictions_validation = []
+
+for i in range(len(lista_labels)):
+    target_class = lista_labels[i]
+
+    y_train_ova = (y_train == target_class).astype(int)
+    y_validation_ova = (y_validation == target_class).astype(int)
+    y_test_ova  = (y_test  == target_class).astype(int)
+
+    model = CatBoostClassifier(
+        verbose=False,
+        random_seed=42
+    )
+
+    lst = np.array(cuvinte[i])
+
+    # 🔹 Train + validation (pentru control)
+    model.fit(
+        X_train[lst], y_train_ova,
+        eval_set=(X_validation[lst], y_validation_ova),
+        early_stopping_rounds=50
+    )
+
+    # 🔹 Predicții
+    y_pred_train = model.predict_proba(X_train[lst])[:,1]
+    y_pred_validation = model.predict_proba(X_validation[lst])[:,1]
+    y_pred_test = model.predict_proba(X_test[lst])[:,1]
+
+    Predictions_train.append(y_pred_train)
+    Predictions_validation.append(y_pred_validation)
+    Predictions.append(y_pred_test)
+
+# 🔹 Transformare
+Predictions = np.array(Predictions).T
+Predictions_train = np.array(Predictions_train).T
+Predictions_validation = np.array(Predictions_validation).T
+
+# 🔹 Argmax
+y_pred_train_numere = np.argmax(Predictions_train, axis=1)
+y_pred_validation_numere = np.argmax(Predictions_validation, axis=1)
+y_pred_test_numere = np.argmax(Predictions, axis=1)
+
+# 🔹 Mapare label-uri
+y_pred_train = [lista_labels[i] for i in y_pred_train_numere]
+y_pred_validation = [lista_labels[i] for i in y_pred_validation_numere]
+y_pred_test = [lista_labels[i] for i in y_pred_test_numere]
+
+# 🔹 Scoruri corecte
+print(
+    "f1 train:", f1_score(y_train, y_pred_train, average='macro'),
+    "f1 validation:", f1_score(y_validation, y_pred_validation, average='macro'),
+    "f1 test:", f1_score(y_test, y_pred_test, average='macro')
+)
+
+y_pred
+
+rf = CatBoostClassifier()
+rf.fit(Predictions_train, y_train)
+y_pred = rf.predict(Predictions)
+print(f1_score(y_test, y_pred,average='macro'))
+
+y_pred
+
+
+
+
